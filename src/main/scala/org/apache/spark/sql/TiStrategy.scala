@@ -44,7 +44,7 @@ class TiStrategy(context: SQLContext) extends Strategy with Logging {
   val sqlConf = context.conf
 
   override def apply(plan: LogicalPlan): Seq[SparkPlan] = {
-    val relations = plan.collect({ case p => p })
+    val relations = plan.collect({ case p => p })//选取 所有 符合LogicalRelation的 plan
       .filter(_.isInstanceOf[LogicalRelation])
       .map(_.asInstanceOf[LogicalRelation])
       .map(_.relation)
@@ -55,13 +55,13 @@ class TiStrategy(context: SQLContext) extends Strategy with Logging {
     } else {
       val sources = relations.map(_.asInstanceOf[TiDBRelation])
       val source = sources.head
-      doPlan(source, plan)
+      doPlan(source, plan)//开始 依次 执行plan
     }
   }
 
   private def toCoprocessorRDD(source: TiDBRelation,
                                output: Seq[Attribute],
-                               selectRequest: TiSelectRequest): SparkPlan = {
+                               selectRequest: TiSelectRequest): SparkPlan = {//执行plan转换成rdd
     val schemaTypes = StructType.fromAttributes(output).fields.map(_.dataType)
     selectRequest.setTableInfo(source.table)
     val rdd = source.logicalPlanToRDD(selectRequest)
@@ -197,21 +197,21 @@ class TiStrategy(context: SQLContext) extends Strategy with Logging {
     val avgPushdownRewriteMap = mutable.HashMap[ExprId, List[AggregateExpression]]()
     val avgFinalRewriteMap = mutable.HashMap[ExprId, List[AggregateExpression]]()
 
-    def toAlias(expr: Expression) = aliasMap.getOrElseUpdate(expr, Alias(expr, expr.toString)())
+    def toAlias(expr: Expression) = aliasMap.getOrElseUpdate(expr, Alias(expr, expr.toString)())//别名转换
 
     def newAggregate(aggFunc: AggregateFunction,
                      originalAggExpr: AggregateExpression) =
       AggregateExpression(aggFunc,
                           originalAggExpr.mode,
                           originalAggExpr.isDistinct,
-                          originalAggExpr.resultId)
+                          originalAggExpr.resultId)//聚合 表达式
 
     def newAggregateWithId(aggFunc: AggregateFunction,
                            originalAggExpr: AggregateExpression) =
       AggregateExpression(aggFunc,
         originalAggExpr.mode,
         originalAggExpr.isDistinct,
-        NamedExpression.newExprId)
+        NamedExpression.newExprId)//聚合 表达式
 
     // TODO: This test should be done once for all children
     plan match {
@@ -251,7 +251,7 @@ class TiStrategy(context: SQLContext) extends Strategy with Logging {
                 newAggregate(First(toAlias(aggExpr).toAttribute, ignoreNullsExpr), aggExpr)
               case _ => aggExpr
             }
-        } flatMap {
+        } flatMap {//先映射再扁平化
           aggExpr =>
             aggExpr match {
               // We have to separate average into sum and count
@@ -259,27 +259,28 @@ class TiStrategy(context: SQLContext) extends Strategy with Logging {
               // Spark has lift agg + 1 up to resultExpressions
               // We need to modify the reference there as well to forge
               // Divide(sum/count) + 1
+              //模式匹配 求平均的表达式
               case aggExpr@AggregateExpression(Average(ref), _, _, _) =>
                 // Need a type promotion
-                val promotedType = ref.dataType match {
+                val promotedType = ref.dataType match {//转换类型为double用来计算
                   case DoubleType | DecimalType.Fixed(_, _) | LongType => ref
                   case _ => Cast(ref, DoubleType)
                 }
-                val sumToPush = newAggregate(Sum(promotedType), aggExpr)
+                val sumToPush = newAggregate(Sum(promotedType), aggExpr)//表达式下推给行的子表达式
                 val countToPush = newAggregate(Count(ref), aggExpr)
 
                 // Need a new expression id since they are not simply rewrite as above
-                val sumFinal = newAggregateWithId(Sum(toAlias(sumToPush).toAttribute), aggExpr)
+                val sumFinal = newAggregateWithId(Sum(toAlias(sumToPush).toAttribute), aggExpr)//全部子表达式加起来
                 val countFinal = newAggregateWithId(Sum(toAlias(countToPush).toAttribute), aggExpr)
 
                 avgPushdownRewriteMap(aggExpr.resultId) = List(sumToPush, countToPush)
                 avgFinalRewriteMap(aggExpr.resultId) = List(sumFinal, countFinal)
-                List(sumFinal, countFinal)
+                List(sumFinal, countFinal)//返回最终结果
               case _ => aggExpr :: Nil
             }
         }
 
-        val pushdownAggregates = aggregateExpressions.flatMap {
+        val pushdownAggregates = aggregateExpressions.flatMap {//聚合下推
           aggExpr =>
             avgPushdownRewriteMap
               .getOrElse(aggExpr.resultId, List(aggExpr))
@@ -290,7 +291,7 @@ class TiStrategy(context: SQLContext) extends Strategy with Logging {
           source,
           selReq)
 
-        val rewrittenResultExpression = resultExpressions.map(
+        val rewrittenResultExpression = resultExpressions.map(//重写结果表达式
           expr => expr.transformDown {
             case aggExpr: AttributeReference
               if avgFinalRewriteMap.contains(aggExpr.exprId) =>
@@ -303,7 +304,7 @@ class TiStrategy(context: SQLContext) extends Strategy with Logging {
               // they are created by tiSpark without Spark conversion
               // TODO: Is DoubleType a best target type for all?
               Cast(
-                Divide(
+                Divide(//两个结果分别求和并相除
                   Cast(sumCountPair.head.resultAttribute, DoubleType),
                   Cast(sumCountPair(1).resultAttribute, DoubleType)
                 ),

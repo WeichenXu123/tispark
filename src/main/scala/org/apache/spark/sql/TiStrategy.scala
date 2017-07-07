@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /*
  * Copyright 2017 PingCAP, Inc.
  *
@@ -32,6 +33,24 @@ import org.apache.spark.sql.types._
 
 import scala.collection.JavaConversions._
 import scala.collection.{JavaConversions, mutable}
+=======
+package org.apache.spark.sql
+
+
+import com.pingcap.tispark.TiUtils._
+import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, _}
+import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Cast, Divide, ExprId, Expression, IntegerLiteral, NamedExpression}
+import org.apache.spark.sql.catalyst.planning.{PhysicalAggregation, PhysicalOperation}
+import org.apache.spark.sql.catalyst.plans.logical
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.execution.datasources.LogicalRelation
+import org.apache.spark.sql.execution.{RDDConversions, RDDScanExec, SparkPlan, aggregate}
+import org.apache.spark.sql.sources.CatalystSource
+import org.apache.spark.sql.types.{DecimalType, DoubleType, LongType}
+
+import scala.collection.mutable
+>>>>>>> 261a30a9ccd7c9969cd06666a150e9e9dd860667
 
 
 // TODO: Too many hacks here since we hijacks the planning
@@ -43,13 +62,20 @@ import scala.collection.{JavaConversions, mutable}
 class TiStrategy(context: SQLContext) extends Strategy with Logging {
   val sqlConf = context.conf
 
+<<<<<<< HEAD
   override def apply(plan: LogicalPlan): Seq[SparkPlan] = {
     val relations = plan.collect({ case p => p })
+=======
+
+  override def apply(plan: LogicalPlan): Seq[SparkPlan] = {
+    val relations = plan.collect({ case p => p })//选取 所有 符合LogicalRelation的 plan
+>>>>>>> 261a30a9ccd7c9969cd06666a150e9e9dd860667
       .filter(_.isInstanceOf[LogicalRelation])
       .map(_.asInstanceOf[LogicalRelation])
       .map(_.relation)
       .toList
 
+<<<<<<< HEAD
     if (relations.isEmpty || relations.exists(!_.isInstanceOf[TiDBRelation])) {
       Nil
     } else {
@@ -186,31 +212,61 @@ class TiStrategy(context: SQLContext) extends Strategy with Logging {
       val scan = toCoprocessorRDD(source, projectSeq, selectRequest)
       ProjectExec(projectList, residualFilter.map(FilterExec(_, scan)).getOrElse(scan))
     }
+=======
+    if (relations.isEmpty || relations.exists(!_.isInstanceOf[CatalystSource])) {
+      Nil
+    } else {
+      val sources = relations.map(_.asInstanceOf[CatalystSource])
+      val source = sources.head
+      doPlan(source, plan)//开始 依次 执行plan
+    }
+  }
+
+  private def toPhysicalRDD(cs: CatalystSource, plan: LogicalPlan): SparkPlan = {//执行plan转换成rdd
+    val rdd = cs.logicalPlanToRDD(plan)
+    val internalRdd = RDDConversions.rowToRowRdd(rdd,
+      plan.schema.fields.map(_.dataType))
+
+    RDDScanExec(plan.output, internalRdd, "CatalystSource")
+>>>>>>> 261a30a9ccd7c9969cd06666a150e9e9dd860667
   }
 
   // We do through similar logic with original Spark as in SparkStrategies.scala
   // Difference is we need to test if a sub-plan can be consumed all together by TiKV
   // and then we don't return (don't planLater) and plan the remaining all at once
+<<<<<<< HEAD
   private def doPlan(source: TiDBRelation, plan: LogicalPlan): Seq[SparkPlan] = {
+=======
+  private def doPlan(cs: CatalystSource, plan: LogicalPlan): Seq[SparkPlan] = {
+>>>>>>> 261a30a9ccd7c9969cd06666a150e9e9dd860667
 
     val aliasMap = mutable.HashMap[Expression, Alias]()
     val avgPushdownRewriteMap = mutable.HashMap[ExprId, List[AggregateExpression]]()
     val avgFinalRewriteMap = mutable.HashMap[ExprId, List[AggregateExpression]]()
 
+<<<<<<< HEAD
     def toAlias(expr: Expression) = aliasMap.getOrElseUpdate(expr, Alias(expr, expr.toString)())
+=======
+    def toAlias(expr: Expression) = aliasMap.getOrElseUpdate(expr, Alias(expr, expr.toString)())//别名转换
+>>>>>>> 261a30a9ccd7c9969cd06666a150e9e9dd860667
 
     def newAggregate(aggFunc: AggregateFunction,
                      originalAggExpr: AggregateExpression) =
       AggregateExpression(aggFunc,
                           originalAggExpr.mode,
                           originalAggExpr.isDistinct,
+<<<<<<< HEAD
                           originalAggExpr.resultId)
+=======
+                          originalAggExpr.resultId)//聚合 表达式
+>>>>>>> 261a30a9ccd7c9969cd06666a150e9e9dd860667
 
     def newAggregateWithId(aggFunc: AggregateFunction,
                            originalAggExpr: AggregateExpression) =
       AggregateExpression(aggFunc,
         originalAggExpr.mode,
         originalAggExpr.isDistinct,
+<<<<<<< HEAD
         NamedExpression.newExprId)
 
     // TODO: This test should be done once for all children
@@ -342,3 +398,140 @@ object TiAggregationProjection {
     }
   }
 }
+=======
+        NamedExpression.newExprId)//聚合 表达式
+
+    // TODO: This test should be done once for all children
+    if (!isSupportedLogicalPlan(plan))//校验是否符合 规范
+      Nil
+    else
+      plan match {
+        // This is almost the same as Spark's original SpecialLimits logic
+        // The difference is that we hijack the plan for pushdown
+        // Limit + Sort can be consumed by coprocessor iff no aggregates
+        // so we don't need to match it further
+
+        case logical.ReturnAnswer(rootPlan) => rootPlan match { //返回结果
+
+          case logical.Limit(IntegerLiteral(limit), logical.Sort(order, true, child)) =>
+            execution.TakeOrderedAndProjectExec(limit, order, child.output, toPhysicalRDD(cs, rootPlan)) :: Nil
+          case logical.Limit(
+          IntegerLiteral(limit),
+          logical.Project(projectList, logical.Sort(order, true, _))) =>
+            execution.TakeOrderedAndProjectExec(
+              limit, order, projectList, toPhysicalRDD(cs, rootPlan)) :: Nil
+          case logical.Limit(IntegerLiteral(limit), _) =>
+            execution.CollectLimitExec(limit, toPhysicalRDD(cs, rootPlan)) :: Nil
+        }
+
+          // Collapse filters and projections and push plan directly
+        case PhysicalOperation(_, _, LogicalRelation(_: CatalystSource, _, _)) =>
+          toPhysicalRDD(cs, plan) :: Nil
+
+          // A fall-back for all logic in case nothing to push
+        case LogicalRelation(_: CatalystSource, _, _) => toPhysicalRDD(cs, plan) :: Nil
+
+          // Basic logic of original Spark's aggregation plan is:
+          // PhysicalAggregation extractor will rewrite original aggregation
+          // into aggregateExpressions and resultExpressions.
+          // resultExpressions contains only references [[AttributeReference]]
+          // to the result of aggregation. resultExpressions might contain projections
+          // like Add(sumResult, 1).
+          // For a aggregate like agg(expr) + 1, the rewrite process is: rewrite agg(expr) ->
+          // 1. pushdown: agg(expr) as agg1, if avg then sum(expr), count(expr)
+          // 2. residual expr (for Spark itself): agg(agg1) as finalAgg1 the parameter is a
+          // reference to pushed plan's corresponding aggregation
+          // 3. resultExpressions: finalAgg1 + 1, the finalAgg1 is the reference to final result
+          // of the aggregation
+        case PhysicalAggregation(
+        groupingExpressions, aggregateExpressions, resultExpressions, child)
+          if (!aggregateExpressions.exists(_.isDistinct)) =>
+          val residualAggregateExpressions = aggregateExpressions.map {
+            aggExpr =>
+              aggExpr.aggregateFunction match {
+                  // here aggExpr is the original AggregationExpression
+                  // and will be pushed down to TiKV
+                case Max(_) => newAggregate(Max(toAlias(aggExpr).toAttribute), aggExpr)
+                case Min(_) => newAggregate(Min(toAlias(aggExpr).toAttribute), aggExpr)
+                case Count(_) => newAggregate(Count(toAlias(aggExpr).toAttribute), aggExpr)
+                case Sum(_) => newAggregate(Sum(toAlias(aggExpr).toAttribute), aggExpr)
+                  // TODO: More to add
+                case _ => aggExpr
+              }
+          } flatMap {//先映射再扁平化
+            aggExpr =>
+              aggExpr match {
+                // We have to separate average into sum and count
+                // and for outside expression such as average(x) + 1,
+                // Spark has lift agg + 1 up to resultExpressions
+                // We need to modify the reference there as well to forge
+                // Divide(sum/count) + 1
+                  //模式匹配求平均的表达式
+                case aggExpr@AggregateExpression(Average(ref), _, _, _) =>
+                  // Need a type promotion
+                  val promotedType = ref.dataType match {//转换类型为doubule用来计算
+                    case DoubleType | DecimalType.Fixed(_, _) | LongType => ref
+                    case _ => Cast(ref, DoubleType)
+                  }
+                  val sumToPush = newAggregate(Sum(promotedType), aggExpr)//表达式下推给行的子表达式
+                  val countToPush = newAggregate(Count(ref), aggExpr)
+
+                  // Need a new expression id since they are not simply rewrite as above
+                  val sumFinal = newAggregateWithId(Sum(toAlias(sumToPush).toAttribute), aggExpr)//全部子表达式加起来
+                  val countFinal = newAggregateWithId(Count(toAlias(countToPush).toAttribute), aggExpr)
+
+                  avgPushdownRewriteMap(aggExpr.resultId) = List(sumToPush, countToPush)
+                  avgFinalRewriteMap(aggExpr.resultId) = List(sumFinal, countFinal)
+                  List(sumFinal, countFinal)//返回最终结果
+                case _ => aggExpr :: Nil
+              }
+          }
+
+
+          val pushdownAggregates = aggregateExpressions.flatMap {//聚合下推
+            aggExpr =>
+              avgPushdownRewriteMap
+                .getOrElse(aggExpr.resultId, List(aggExpr))
+                .map(x => toAlias(x)) // Spark needs NamedExpression for references
+          }
+
+          val pushDownPlan = logical.Aggregate(
+            groupingExpressions,
+            pushdownAggregates ++ groupingExpressions,//将下推的表达式和group表达式合并并下推给子计划
+            child)
+
+          val rewrittenResultExpression = resultExpressions.map(//重写结果表达式
+            expr => expr.transformDown {
+              case aggExpr: AttributeReference
+                if (avgFinalRewriteMap.contains(aggExpr.exprId)) => {
+                // Replace the original Average expression with Div of Alias
+                val sumCountPair = avgFinalRewriteMap(aggExpr.exprId)
+
+                // We missed the chance for auto-coerce already
+                // so manual cast needed
+                // Also, convert into resultAttribute since
+                // they are created by tiSpark without Spark conversion
+                // TODO: Is DoubleType a best target type for all?
+                Cast(
+                  Divide(//两个结果分别求和并相除
+                    Cast(sumCountPair(0).resultAttribute, DoubleType),
+                    Cast(sumCountPair(1).resultAttribute, DoubleType)
+                  ),
+                  aggExpr.dataType
+                )
+              }
+              case other => other
+            }.asInstanceOf[NamedExpression]
+          )
+
+          aggregate.AggUtils.planAggregateWithoutDistinct(
+            groupingExpressions,
+            residualAggregateExpressions,
+            rewrittenResultExpression,
+            toPhysicalRDD(cs, pushDownPlan))
+
+        case _ => Nil
+      }
+  }
+}
+>>>>>>> 261a30a9ccd7c9969cd06666a150e9e9dd860667

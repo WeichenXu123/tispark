@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /*
  * Copyright 2017 PingCAP, Inc.
  *
@@ -20,5 +21,16 @@ import org.apache.spark.Partition
 
 
 class TiPartition(idx: Int, val task: RegionTask) extends Partition {
+=======
+package com.pingcap.tispark
+
+import com.google.proto4pingcap.ByteString
+import com.pingcap.tikv.grpc.Metapb.{Region, Store}
+import com.pingcap.tikv.meta.TiRange
+import org.apache.spark.Partition
+
+
+class TiPartition(idx: Int, val region: Region, val store: Store, val tiRange: TiRange[ByteString]) extends Partition {
+>>>>>>> 261a30a9ccd7c9969cd06666a150e9e9dd860667
   override def index: Int = idx
 }

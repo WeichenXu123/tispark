@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /*
  * Copyright 2017 PingCAP, Inc.
  *
@@ -13,6 +14,8 @@
  * limitations under the License.
  */
 
+=======
+>>>>>>> 261a30a9ccd7c9969cd06666a150e9e9dd860667
 package com.pingcap.tispark
 
 

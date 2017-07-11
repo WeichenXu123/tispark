@@ -16,7 +16,8 @@ object TiSparkTest {
       .getOrCreate()
     val ti = new TiContext(spark,List("192.168.14.71:2379","192.168.14.77:2379","192.168.14.82:2379"))//
     //runT1Table(ti,spark)
-    runUserTable(ti,spark)
+    //runUserTable(ti,spark)
+    runStudentTable(ti,spark)
 
   }
   def runT1Table(ti:TiContext,spark:SparkSession): Unit ={
@@ -28,5 +29,10 @@ object TiSparkTest {
     val df = ti.tidbTable( "test", "users")
     df.createGlobalTempView("t1")
     spark.sql("select avg(uid) from global_temp.t1").show
+  }
+  def runStudentTable(ti:TiContext,spark:SparkSession): Unit ={
+    val df = ti.tidbTable( "test", "student")
+    df.createGlobalTempView("t1")
+    spark.sql("select class, avg(score) from global_temp.t1 WHERE school = 's1'  and (studentId >= 4 and studentId < 10) or studentId in (1, 2) group by class").show
   }
 }

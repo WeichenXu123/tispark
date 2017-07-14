@@ -234,19 +234,20 @@ class TiStrategy(context: SQLContext) extends Strategy with Logging {
       // of the aggregation
 
       //unapply匹配出UnaryNode的Aggregate
-      case PhysicalAggregation(
-      groupingExpressions,
-      aggregateExpressions,
-      resultExpressions,
-      TiAggregationProjection(filters, _, source))
-        if !aggregateExpressions.exists(_.isDistinct) =>//
+
+      case PhysicalAggregation(//Seq[NamedExpression], Seq[AggregateExpression], Seq[NamedExpression], LogicalPlan
+      groupingExpressions,//NamedExpression group by ..
+      aggregateExpressions,//AggregateExpression class,avg(score)
+      resultExpressions,//NamedExpression
+      TiAggregationProjection(filters, _, source))//对LogicalPlan进行分解
+        if !aggregateExpressions.exists(_.isDistinct) =>
         var selReq: TiSelectRequest = filterToSelectRequest(filters, source)
         val residualAggregateExpressions = aggregateExpressions.map {
           aggExpr =>
             aggExpr.aggregateFunction match {
               // here aggExpr is the original AggregationExpression
               // and will be pushed down to TiKV
-              case Max(_) => newAggregate(Max(toAlias(aggExpr).toAttribute), aggExpr)
+              case Max(_) => newAggregate(Max(toAlias(aggExpr).toAttribute), aggExpr)//根据 别名，旧的表达式 构造新的表达式，下推
               case Min(_) => newAggregate(Min(toAlias(aggExpr).toAttribute), aggExpr)
               case Count(_) => newAggregate(Sum(toAlias(aggExpr).toAttribute), aggExpr)
               case Sum(_) => newAggregate(Sum(toAlias(aggExpr).toAttribute), aggExpr)
@@ -267,7 +268,7 @@ class TiStrategy(context: SQLContext) extends Strategy with Logging {
                 // Need a type promotion
                 val promotedType = ref.dataType match {//转换类型为double用来计算
                   case DoubleType | DecimalType.Fixed(_, _) | LongType => ref
-                  case _ => Cast(ref, DoubleType)
+                  case _ => Cast(ref, DoubleType)//其他数据类型 转换成double
                 }
                 val sumToPush = newAggregate(Sum(promotedType), aggExpr)//表达式下推给行的子表达式
                 val countToPush = newAggregate(Count(ref), aggExpr)
@@ -278,7 +279,7 @@ class TiStrategy(context: SQLContext) extends Strategy with Logging {
 
                 avgPushdownRewriteMap(aggExpr.resultId) = List(sumToPush, countToPush)
                 avgFinalRewriteMap(aggExpr.resultId) = List(sumFinal, countFinal)
-                List(sumFinal, countFinal)//返回最终结果
+                List(sumFinal, countFinal)//返回list给flatMap
               case _ => aggExpr :: Nil
             }
         }
@@ -338,6 +339,7 @@ object TiAggregationProjection {
     plan match {
       // Only push down aggregates projection when all filters can be applied and
       // all projection expressions are column references
+        // rel@LogicalRelation 匹配source为TiDBRelation的 LogicalRelation
       case PhysicalOperation(projects, filters, rel@LogicalRelation(source: TiDBRelation, _, _))
         if projects.forall(_.isInstanceOf[Attribute]) &&
           filters.forall(TiUtils.isSupportedFilter) =>

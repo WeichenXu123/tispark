@@ -239,7 +239,7 @@ class TiStrategy(context: SQLContext) extends Strategy with Logging {
       aggregateExpressions,
       resultExpressions,
       TiAggregationProjection(filters, _, source))
-        if !aggregateExpressions.exists(_.isDistinct) =>
+        if !aggregateExpressions.exists(_.isDistinct) =>//
         var selReq: TiSelectRequest = filterToSelectRequest(filters, source)
         val residualAggregateExpressions = aggregateExpressions.map {
           aggExpr =>

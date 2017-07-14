@@ -1,5 +1,6 @@
 # tispark
-A cannot-be-more-trivial implementation of tidb-spark-connector.
+A thin layer of TiSpark. Most of the logic is inside tikv-java-client library.
+https://github.com/pingcap/tikv-client-lib-java
 
 
 Uses as below
@@ -12,11 +13,4 @@ val sqlContext = new org.apache.spark.sql.SQLContext(sc)
 import sqlContext.implicits._
 val ti = new TiContext(sqlContext.sparkSession, List("127.0.0.1:" + 2379))
 
-
-val df = ti.tidbTable("global_temp", "item")
-df.createGlobalTempView("item")
-
-spark.sql("select sum(discount) as avg_disc from global_temp.item").show
-
-spark.sql("select count(*) as avg_disc from global_temp.item").show
-
+ti.tidbMapDatabase("tpch")

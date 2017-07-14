@@ -234,8 +234,7 @@ class TiStrategy(context: SQLContext) extends Strategy with Logging {
       // of the aggregation
 
       //unapply匹配出UnaryNode的Aggregate
-
-      case PhysicalAggregation(//Seq[NamedExpression], Seq[AggregateExpression], Seq[NamedExpression], LogicalPlan
+      case TiAggregation(//Seq[NamedExpression], Seq[AggregateExpression], Seq[NamedExpression], LogicalPlan
       groupingExpressions,//NamedExpression group by ..
       aggregateExpressions,//AggregateExpression class,avg(score)
       resultExpressions,//NamedExpression
@@ -331,20 +330,30 @@ class TiStrategy(context: SQLContext) extends Strategy with Logging {
   }
 }
 
+object TiAggregation {
+  type ReturnType = PhysicalAggregation.ReturnType
+
+  def unapply(a: Any): Option[ReturnType] = a match {
+    case PhysicalAggregation(groupingExpressions, aggregateExpressions, resultExpressions, child)
+      if (groupingExpressions.forall(TiUtils.isSupportedGroupingExpr) &&
+          aggregateExpressions.forall(TiUtils.isSupportedAggregate)) =>
+      Some(groupingExpressions, aggregateExpressions, resultExpressions, child)
+
+    case _ => Option.empty[ReturnType]
+  }
+}
 
 object TiAggregationProjection {
   type ReturnType = (Seq[Expression], LogicalPlan, TiDBRelation)
 
-  def unapply(plan: LogicalPlan): Option[ReturnType] = {
-    plan match {
-      // Only push down aggregates projection when all filters can be applied and
-      // all projection expressions are column references
-        // rel@LogicalRelation 匹配source为TiDBRelation的 LogicalRelation
-      case PhysicalOperation(projects, filters, rel@LogicalRelation(source: TiDBRelation, _, _))
-        if projects.forall(_.isInstanceOf[Attribute]) &&
-          filters.forall(TiUtils.isSupportedFilter) =>
-        Some((filters, rel, source))
-      case _ => Option.empty[ReturnType]
-    }
+  def unapply(plan: LogicalPlan): Option[ReturnType] = plan match {
+    // Only push down aggregates projection when all filters can be applied and
+    // all projection expressions are column references
+    // rel@LogicalRelation 匹配source为TiDBRelation的 LogicalRelation
+    case PhysicalOperation(projects, filters, rel@LogicalRelation(source: TiDBRelation, _, _))
+      if (projects.forall(_.isInstanceOf[Attribute]) &&
+          filters.forall(TiUtils.isSupportedFilter)) =>
+      Some((filters, rel, source))
+    case _ => Option.empty[ReturnType]
   }
 }

@@ -57,7 +57,8 @@ object TiUtils {
       case _: RawBytesType => sql.types.BinaryType
       case _: BytesType => sql.types.StringType
       case _: IntegerType => sql.types.LongType
-      case _: RealType => sql.types.DoubleType
+      //case _: RealType => sql.types.DoubleType
+      case _: RealType => sql.types.FloatType
       case _: DecimalType => DataTypes.createDecimalType(tp.getLength, tp.getDecimal)
       case _: TimestampType => sql.types.TimestampType
       case _: DateType => sql.types.DateType

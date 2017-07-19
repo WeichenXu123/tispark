@@ -288,15 +288,16 @@ class TiStrategy(context: SQLContext) extends Strategy with Logging {
             avgPushdownRewriteMap
               .getOrElse(aggExpr.resultId, List(aggExpr))
         }
-
+        //聚合表达式转成TiSelectRequest
         selReq = aggregationToSelectRequest(groupingExpressions,
           pushdownAggregates,
           source,
           selReq)
 
         val rewrittenResultExpression = resultExpressions.map(//重写结果表达式
-          expr => expr.transformDown {
+          expr => expr.transformDown {//TreeNode方法进行表达式下推
             case aggExpr: AttributeReference
+              //对avgFinalRewriteMap的表达式进行特殊处理
               if avgFinalRewriteMap.contains(aggExpr.exprId) =>
               // Replace the original Average expression with Div of Alias
               val sumCountPair = avgFinalRewriteMap(aggExpr.exprId)
@@ -316,9 +317,9 @@ class TiStrategy(context: SQLContext) extends Strategy with Logging {
             case other => other
           }.asInstanceOf[NamedExpression]
         )
-
+        //将groupingExpressions合并到pushdownAggregates中类似::
         val output = (groupingExpressions ++ pushdownAggregates.map(x => toAlias(x))).map(_.toAttribute)
-
+        //这边planAggregateWithoutDistinct里面好难 看不懂
         aggregate.AggUtils.planAggregateWithoutDistinct(
           groupingExpressions,
           residualAggregateExpressions,
